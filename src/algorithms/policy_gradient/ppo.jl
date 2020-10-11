@@ -45,6 +45,7 @@ mutable struct PPOPolicy{A<:ActorCritic,D,R} <: AbstractPolicy
     critic_loss::Matrix{Float32}
     entropy_loss::Matrix{Float32}
     loss::Matrix{Float32}
+    avg_val::Float32
 end
 
 function PPOPolicy(;
@@ -78,6 +79,7 @@ function PPOPolicy(;
         zeros(Float32, n_microbatches, n_epochs),
         zeros(Float32, n_microbatches, n_epochs),
         zeros(Float32, n_microbatches, n_epochs),
+        0f0,
     )
 end
 
@@ -142,6 +144,7 @@ function RLBase.update!(p::PPOPolicy, t::PPOTrajectory)
     advantages =
         generalized_advantage_estimation(rewards, states_plus_values, γ, λ; dims = 2)
     returns = advantages .+ select_last_dim(states_plus_values, 1:n_rollout)
+    p.avg_val = sum(returns) / length(returns)
 
     # TODO: normalize advantage
     for epoch in 1:n_epochs
