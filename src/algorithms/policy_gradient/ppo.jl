@@ -92,12 +92,12 @@ function RLBase.get_prob(
     StructArray{Normal}
 end
 
-function RLBase.get_prob(p::PPOPolicy{<:ActorCritic,Categorical}, state::AbstractArray)
+function RLBase.get_prob(p::PPOPolicy{<:ActorCritic, Categorical}, state::AbstractArray)
     logits =
         p.approximator.actor(send_to_device(device(p.approximator), state)) |>
         softmax |>
         send_to_host
-    [Categorical(x; check_args = false) for x in eachcol(logits)]
+    [Categorical(x;check_args=false) for x in eachcol(logits)]
 end
 
 RLBase.get_prob(p::PPOPolicy, env::MultiThreadEnv) = get_prob(p, get_state(env))
@@ -168,15 +168,20 @@ function RLBase.update!(p::PPOPolicy, t::PPOTrajectory)
                 v′ = AC.critic(s) |> vec
                 if AC.actor isa NeuralNetworkApproximator{<:GaussianNetwork}
                     μ, σ = AC.actor(s)
-                    log_p′ₐ = normlogpdf(μ, σ, a)
-                    entropy_loss = mean((log(2.0f0π) + 1) / 2 .+ log.(σ))
+                    if eltype(a) <: AbstractArray
+                        log_p′ₐ = sum(normlogpdf(μ, σ, hcat(a...)),dims=1) |> vec
+                        entropy_loss = mean(sum((log(2.0f0π)+1)/2 .+ log.(σ), dims=1))
+                    else
+                        log_p′ₐ = normlogpdf(μ, σ, a)
+                        entropy_loss = mean((log(2.0f0π)+1)/2 .+ log.(σ))
+                    end
                 else
                     # actor is assumed to return discrete logits
                     logit′ = AC.actor(s)
                     p′ = softmax(logit′)
                     log_p′ = logsoftmax(logit′)
                     log_p′ₐ = log_p′[CartesianIndex.(a, 1:length(a))]
-                    entropy_loss = -sum(p′ .* log_p′) * 1 // size(p′, 2)
+                    entropy_loss = -sum(p′ .* log_p′) * 1//size(p′, 2)
                 end
 
                 ratio = exp.(log_p′ₐ .- log_p)
@@ -201,6 +206,8 @@ function RLBase.update!(p::PPOPolicy, t::PPOTrajectory)
             update!(AC, gs)
         end
     end
+    println("updated")
+    return 1
 end
 
 function (agent::Agent{<:Union{PPOPolicy,RandomStartPolicy{<:PPOPolicy}}})(
@@ -212,9 +219,9 @@ function (agent::Agent{<:Union{PPOPolicy,RandomStartPolicy{<:PPOPolicy}}})(
 
     # currently RandomPolicy returns a Matrix instead of a (vector of) distribution.
     if dist isa Matrix{<:Number}
-        dist = [Categorical(x; check_args = false) for x in eachcol(dist)]
+        dist = [Categorical(x;check_args=false) for x in eachcol(dist)]
     elseif dist isa Vector{<:Vector{<:Number}}
-        dist = [Categorical(x; check_args = false) for x in dist]
+        dist = [Categorical(x;check_args=false) for x in dist]
     end
 
     # !!! a little ugly
@@ -226,6 +233,11 @@ function (agent::Agent{<:Union{PPOPolicy,RandomStartPolicy{<:PPOPolicy}}})(
 
     action = [rand(rng, d) for d in dist]
     action_log_prob = [logpdf(d, a) for (d, a) in zip(dist, action)]
+    # NOTE I made the following change to handle vectorized action
+    if ndims(action) == 2
+        action = [@view(action[:,i]) for i=1:size(action,2)]
+        action_log_prob = sum(action_log_prob, dims=1) |> vec
+    end
     push!(
         agent.trajectory;
         state = state,
