@@ -139,15 +139,16 @@ function RLBase.update!(p::PPOPolicy, t::PPOTrajectory)
 
     states_flatten = flatten_batch(states)
     states_plus_flatten = flatten_batch(states_plus)
-    states_plus_values =
-        reshape(send_to_host(AC.critic(send_to_device(D, states_plus_flatten))), n_envs, :)
-    advantages =
-        generalized_advantage_estimation(rewards, states_plus_values, γ, λ; dims = 2)
-    returns = advantages .+ select_last_dim(states_plus_values, 1:n_rollout)
-    p.avg_val = sum(returns) / length(returns)
 
     # TODO: normalize advantage
     for epoch in 1:n_epochs
+        # recompute advantage estimate every epoch based on the recommendation in Implementation Matters in Deep RL: A Case Study on PPO and TRPO
+        states_plus_values =
+            reshape(send_to_host(AC.critic(send_to_device(D, states_plus_flatten))), n_envs, :)
+        advantages =
+            generalized_advantage_estimation(rewards, states_plus_values, γ, λ; dims = 2, terminal = terminals)
+        returns = advantages .+ select_last_dim(states_plus_values, 1:n_rollout)
+        epoch == 1 ? p.avg_val = sum(returns) / length(returns) : nothing
         rand_inds = shuffle!(rng, Vector(1:n_envs*n_rollout))
         for i in 1:n_microbatches
             inds = rand_inds[(i-1)*microbatch_size+1:i*microbatch_size]
@@ -170,10 +171,10 @@ function RLBase.update!(p::PPOPolicy, t::PPOTrajectory)
                     μ, σ = AC.actor(s)
                     if eltype(a) <: AbstractArray
                         log_p′ₐ = sum(normlogpdf(μ, σ, hcat(a...)),dims=1) |> vec
-                        entropy_loss = mean(sum((log(2.0f0π)+1)/2 .+ log.(σ), dims=1))
+                        entropy_loss = mean(sum((log(2.0f0π)+1)/2 .+ log.(σ .+ 1f-8), dims=1))
                     else
                         log_p′ₐ = normlogpdf(μ, σ, a)
-                        entropy_loss = mean((log(2.0f0π)+1)/2 .+ log.(σ))
+                        entropy_loss = mean((log(2.0f0π)+1)/2 .+ log.(σ .+ 1f-8))
                     end
                 else
                     # actor is assumed to return discrete logits

@@ -22,7 +22,7 @@ Flux.@functor GaussianNetwork
 function (m::GaussianNetwork)(S)
     x = m.pre(S)
     # m.μ(x), m.σ(x) .|> exp
-    m.μ(x), m.σ(x) .|> softplus .|> x -> x + typeof(x)(0.1) # instead of exp, try using softplus. exponentiation sometimes results in nan.
+    m.μ(x), m.σ(x) .|> softplus .|> x -> x + typeof(x)(0) # instead of exp, try using softplus. exponentiation sometimes results in nan.
 end
 
 """
