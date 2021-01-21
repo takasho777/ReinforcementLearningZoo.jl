@@ -1320,18 +1320,22 @@ function RLCore.Experiment(
     agent = Agent(
         policy = PPOPolicy(
             approximator = ActorCritic(
-                actor = GaussianNetwork(
-                    pre = Chain(
+                actor = NeuralNetworkApproximator(
+                    model =  GaussianNetwork(
+                        pre = Chain(
+                            Dense(ns, 64, relu; initW = glorot_uniform(rng)),
+                          Dense(64, 64, relu; initW = glorot_uniform(rng)),
+                        ),
+                        μ = Chain(Dense(64, 1, tanh; initW = glorot_uniform(rng)), vec),
+                        σ = Chain(Dense(64, 1; initW = glorot_uniform(rng)), vec),
+                    ),
+                ),
+                critic = NeuralNetworkApproximator(
+                    model =  Chain(
                         Dense(ns, 64, relu; initW = glorot_uniform(rng)),
                         Dense(64, 64, relu; initW = glorot_uniform(rng)),
+                        Dense(64, 1; initW = glorot_uniform(rng)),
                     ),
-                    μ = Chain(Dense(64, 1, tanh; initW = glorot_uniform(rng)), vec),
-                    σ = Chain(Dense(64, 1; initW = glorot_uniform(rng)), vec),
-                ),
-                critic = Chain(
-                    Dense(ns, 64, relu; initW = glorot_uniform(rng)),
-                    Dense(64, 64, relu; initW = glorot_uniform(rng)),
-                    Dense(64, 1; initW = glorot_uniform(rng)),
                 ),
                 optimizer = ADAM(3e-4),
             ) |> cpu,
