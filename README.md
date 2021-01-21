@@ -20,19 +20,19 @@ This project aims to provide some implementations of the most typical reinforcem
 - Prioritized DQN
 - Rainbow
 - IQN
-- A2C
+- A2C/A2C with GAE/MAC
 - PPO
 - DDPG
 - TD3
 - SAC
-- CFR/OS-MCCFR/ES-MCCFR
+- CFR/OS-MCCFR/ES-MCCFR/DeepCFR
 - Minimax
 
 If you are looking for tabular reinforcement learning algorithms, you may refer [ReinforcementLearningAnIntroduction.jl](https://github.com/JuliaReinforcementLearning/ReinforcementLearningAnIntroduction.jl).
 
 # Built-in Experiments
 
-Some built-in experiments are exported to help new users to easily run benchmarks with one line (for example, ``run(E`JuliaRL_BasicDQN_CartPole`)``). For experienced users, you are suggested to check [the source code](https://github.com/JuliaReinforcementLearning/ReinforcementLearningZoo.jl/tree/master/src/experiments) of those experiments and make changes as needed.
+Some built-in experiments are exported to help new users to easily run benchmarks with one line. For experienced users, you are suggested to check [the source code](https://github.com/JuliaReinforcementLearning/ReinforcementLearningZoo.jl/tree/master/src/experiments) of those experiments and make changes as needed.
 
 ## List of built-in experiments
 
@@ -43,6 +43,7 @@ Some built-in experiments are exported to help new users to easily run benchmark
 - ``E`JuliaRL_IQN_CartPole` ``
 - ``E`JuliaRL_A2C_CartPole` ``
 - ``E`JuliaRL_A2CGAE_CartPole` `` (Thanks to [@sriram13m](https://github.com/sriram13m))
+- ``E`JuliaRL_MAC_CartPole` `` (Thanks to [@RajGhugare19](https://github.com/RajGhugare19))
 - ``E`JuliaRL_PPO_CartPole` ``
 - ``E`JuliaRL_VPG_CartPole` `` (Thanks to [@norci](https://github.com/norci))
 - ``E`JuliaRL_VPG_Pendulum` `` (continuous action space)
@@ -55,12 +56,29 @@ Some built-in experiments are exported to help new users to easily run benchmark
 - ``E`JuliaRL_DQN_MountainCar` `` (Thanks to [@felixchalumeau](https://github.com/felixchalumeau))
 - ``E`JuliaRL_Minimax_OpenSpiel(tic_tac_toe)` ``
 - ``E`JuliaRL_TabularCFR_OpenSpiel(kuhn_poker)` ``
+- ``E`JuliaRL_DeepCFR_OpenSpiel(leduc_poker)` ``
 - ``E`JuliaRL_DQN_SnakeGame` ``
 - ``E`Dopamine_DQN_Atari(pong)` ``
 - ``E`Dopamine_Rainbow_Atari(pong)` ``
 - ``E`Dopamine_IQN_Atari(pong)` ``
 - ``E`rlpyt_A2C_Atari(pong)` ``
 - ``E`rlpyt_PPO_Atari(pong)` ``
+
+## Run Experiments
+
+```julia
+julia> ] add ReinforcementLearning
+
+julia> using ReinforcementLearning
+
+julia> run(E`JuliaRL_BasicDQN_CartPole`)
+
+julia> ] add ArcadeLearningEnvironment
+
+julia> using ArcadeLearningEnvironment
+
+julia> run(E`rlpyt_PPO_Atari(pong)`)  # the Atari environment is provided in ArcadeLearningEnvironment, so we need to install it first
+```
 
 ### Notes:
 

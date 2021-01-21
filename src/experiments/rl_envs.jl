@@ -40,7 +40,7 @@ function RLCore.Experiment(
     end
 
     lg = TBLogger(joinpath(save_dir, "tb_log"), min_level = Logging.Info)
-    rng = MersenneTwister(seed)
+    rng = StableRNG(seed)
 
     env = CartPoleEnv(; T = Float32, rng = rng)
     ns, na = length(get_state(env)), length(get_actions(env))
@@ -120,7 +120,7 @@ function RLCore.Experiment(
     end
 
     lg = TBLogger(joinpath(save_dir, "tb_log"), min_level = Logging.Info)
-    rng = MersenneTwister(seed)
+    rng = StableRNG(seed)
 
     env = CartPoleEnv(; T = Float32, rng = rng)
     ns, na = length(get_state(env)), length(get_actions(env))
@@ -214,7 +214,7 @@ function RLCore.Experiment(
     end
 
     lg = TBLogger(joinpath(save_dir, "tb_log"), min_level = Logging.Info)
-    rng = MersenneTwister(seed)
+    rng = StableRNG(seed)
 
     env = CartPoleEnv(; T = Float32, rng = rng)
     ns, na = length(get_state(env)), length(get_actions(env))
@@ -309,7 +309,7 @@ function RLCore.Experiment(
     end
 
     lg = TBLogger(joinpath(save_dir, "tb_log"), min_level = Logging.Info)
-    rng = MersenneTwister(seed)
+    rng = StableRNG(seed)
 
     env = CartPoleEnv(; T = Float32, rng = rng)
     ns, na = length(get_state(env)), length(get_actions(env))
@@ -410,7 +410,7 @@ function RLCore.Experiment(
     end
 
     lg = TBLogger(joinpath(save_dir, "tb_log"), min_level = Logging.Info)
-    rng = MersenneTwister(seed)
+    rng = StableRNG(seed)
 
     env = CartPoleEnv(; T = Float32, rng = rng)
     ns, na = length(get_state(env)), length(get_actions(env))
@@ -513,11 +513,11 @@ function RLCore.Experiment(
     end
 
     lg = TBLogger(joinpath(save_dir, "tb_log"), min_level = Logging.Info)
-    rng = MersenneTwister(seed)
+    rng = StableRNG(seed)
     N_ENV = 16
     UPDATE_FREQ = 10
     env = MultiThreadEnv([
-        CartPoleEnv(; T = Float32, rng = MersenneTwister(hash(seed + i))) for i in 1:N_ENV
+        CartPoleEnv(; T = Float32, rng = StableRNG(hash(seed + i))) for i in 1:N_ENV
     ])
     ns, na = length(get_state(env[1])), length(get_actions(env[1]))
     RLBase.reset!(env, is_force = true)
@@ -607,11 +607,11 @@ function RLCore.Experiment(
     end
 
     lg = TBLogger(joinpath(save_dir, "tb_log"), min_level = Logging.Info)
-    rng = MersenneTwister(seed)
+    rng = StableRNG(seed)
     N_ENV = 16
     UPDATE_FREQ = 10
     env = MultiThreadEnv([
-        CartPoleEnv(; T = Float32, rng = MersenneTwister(hash(seed + i))) for i in 1:N_ENV
+        CartPoleEnv(; T = Float32, rng = StableRNG(hash(seed + i))) for i in 1:N_ENV
     ])
     ns, na = length(get_state(env[1])), length(get_actions(env[1]))
     RLBase.reset!(env, is_force = true)
@@ -706,7 +706,7 @@ function RLCore.Experiment(
     end
 
     lg = TBLogger(joinpath(save_dir, "tb_log"), min_level = Logging.Info)
-    rng = MersenneTwister(seed)
+    rng = StableRNG(seed)
     inner_env = PendulumEnv(T = Float32, rng = rng)
     action_space = get_actions(inner_env)
     low = action_space.low
@@ -801,6 +801,105 @@ function RLCore.Experiment(
     )
 end
 
+
+function RLCore.Experiment(
+    ::Val{:JuliaRL},
+    ::Val{:MAC},
+    ::Val{:CartPole},
+    ::Nothing;
+    save_dir = nothing,
+    seed = 123,
+)
+    if isnothing(save_dir)
+        t = Dates.format(now(), "yyyy_mm_dd_HH_MM_SS")
+        save_dir = joinpath(pwd(), "checkpoints", "JuliaRL_MAC_CartPole_$(t)")
+    end
+
+    lg = TBLogger(joinpath(save_dir, "tb_log"), min_level = Logging.Info)
+    rng = MersenneTwister(seed)
+    N_ENV = 16
+    UPDATE_FREQ = 20
+    env = MultiThreadEnv([
+        CartPoleEnv(; T = Float32, rng = MersenneTwister(hash(seed + i))) for i in 1:N_ENV
+    ])
+    ns, na = length(get_state(env[1])), length(get_actions(env[1]))
+    RLBase.reset!(env, is_force = true)
+
+    agent = Agent(
+        policy = QBasedPolicy(
+            learner = MACLearner(
+                approximator = ActorCritic(
+                    actor = NeuralNetworkApproximator(
+                        model = Chain(
+                            Dense(ns, 30, relu; initW = glorot_uniform(rng)),
+                            Dense(30, 30, relu; initW = glorot_uniform(rng)),
+                            Dense(30, na; initW = glorot_uniform(rng)),
+                        ),
+                        optimizer = ADAM(1e-2),
+                    ),
+                    critic = NeuralNetworkApproximator(
+                        model = Chain(
+                            Dense(ns, 30, relu; initW = glorot_uniform(rng)),
+                            Dense(30, 30, relu; initW = glorot_uniform(rng)),
+                            Dense(30, na; initW = glorot_uniform(rng)),
+                        ),
+                        optimizer = ADAM(3e-3),
+                    ),
+                ) |> cpu,
+                γ = 0.99f0,
+                bootstrap = true,
+            ),
+            explorer = BatchExplorer(GumbelSoftmaxExplorer()),#= seed = nothing =#
+        ),
+        trajectory = CircularCompactSARTSATrajectory(;
+            capacity = UPDATE_FREQ,
+            state_type = Float32,
+            state_size = (ns, N_ENV),
+            action_type = Int,
+            action_size = (N_ENV,),
+            reward_type = Float32,
+            reward_size = (N_ENV,),
+            terminal_type = Bool,
+            terminal_size = (N_ENV,),
+        ),
+    )
+
+    stop_condition = StopAfterStep(haskey(ENV, "CI") ? 10_000 : 100_000)
+    total_reward_per_episode = TotalBatchRewardPerEpisode(N_ENV)
+    time_per_step = TimePerStep()
+    hook = ComposedHook(
+        total_reward_per_episode,
+        time_per_step,
+        DoEveryNStep() do t, agent, env
+            with_logger(lg) do
+                @info(
+                    "training",
+                    actor_loss = agent.policy.learner.actor_loss,
+                    critic_loss = agent.policy.learner.critic_loss,
+                )
+                for i in 1:length(env)
+                    if get_terminal(env[i])
+                        @info "training" reward = total_reward_per_episode.rewards[i][end] log_step_increment =
+                            0
+                        break
+                    end
+                end
+            end
+        end,
+        DoEveryNStep(10000) do t, agent, env
+            RLCore.save(save_dir, agent)
+            BSON.@save joinpath(save_dir, "stats.bson") total_reward_per_episode time_per_step
+        end,
+    )
+    Experiment(
+        agent,
+        env,
+        stop_condition,
+        hook,
+        Description("# MAC with CartPole", save_dir),
+    )
+end
+
 function RLCore.Experiment(
     ::Val{:JuliaRL},
     ::Val{:TD3},
@@ -815,7 +914,7 @@ function RLCore.Experiment(
     end
 
     lg = TBLogger(joinpath(save_dir, "tb_log"), min_level = Logging.Info)
-    rng = MersenneTwister(seed)
+    rng = StableRNG(seed)
     inner_env = PendulumEnv(T = Float32, rng = rng)
     action_space = get_actions(inner_env)
     low = action_space.low
@@ -929,31 +1028,26 @@ function RLCore.Experiment(
     end
 
     lg = TBLogger(joinpath(save_dir, "tb_log"), min_level = Logging.Info)
-    rng = MersenneTwister(seed)
+    rng = StableRNG(seed)
     N_ENV = 8
     UPDATE_FREQ = 16
     env = MultiThreadEnv([
-        CartPoleEnv(; T = Float32, rng = MersenneTwister(hash(seed + i))) for i in 1:N_ENV
+        CartPoleEnv(; T = Float32, rng = StableRNG(hash(seed + i))) for i in 1:N_ENV
     ])
     ns, na = length(get_state(env[1])), length(get_actions(env[1]))
     RLBase.reset!(env, is_force = true)
     agent = Agent(
         policy = PPOPolicy(
             approximator = ActorCritic(
-                actor = NeuralNetworkApproximator(
-                    model = Chain(
-                        Dense(ns, 256, relu; initW = glorot_uniform(rng)),
-                        Dense(256, na; initW = glorot_uniform(rng)),
-                    ),
-                    optimizer = ADAM(1e-3),
+                actor = Chain(
+                    Dense(ns, 256, relu; initW = glorot_uniform(rng)),
+                    Dense(256, na; initW = glorot_uniform(rng)),
                 ),
-                critic = NeuralNetworkApproximator(
-                    model = Chain(
-                        Dense(ns, 256, relu; initW = glorot_uniform(rng)),
-                        Dense(256, 1; initW = glorot_uniform(rng)),
-                    ),
-                    optimizer = ADAM(1e-3),
+                critic = Chain(
+                    Dense(ns, 256, relu; initW = glorot_uniform(rng)),
+                    Dense(256, 1; initW = glorot_uniform(rng)),
                 ),
+                optimizer = ADAM(1e-3),
             ) |> cpu,
             γ = 0.99f0,
             λ = 0.95f0,
@@ -1026,7 +1120,7 @@ function RLCore.Experiment(
     save_dir = nothing,
     seed = 123,
 )
-    rng = MersenneTwister(seed)
+    rng = StableRNG(seed)
     if isnothing(save_dir)
         t = Dates.format(now(), "yyyy_mm_dd_HH_MM_SS")
         save_dir = joinpath(pwd(), "checkpoints", "JuliaRL_BasicDQN_MountainCar_$(t)")
@@ -1112,7 +1206,7 @@ function RLCore.Experiment(
     end
 
     lg = TBLogger(joinpath(save_dir, "tb_log"), min_level = Logging.Info)
-    rng = MersenneTwister(seed)
+    rng = StableRNG(seed)
 
     env = MountainCarEnv(; T = Float32, max_steps = 5000, rng = rng)
     ns, na = length(get_state(env)), length(get_actions(env))
@@ -1207,7 +1301,7 @@ function RLCore.Experiment(
     end
 
     lg = TBLogger(joinpath(save_dir, "tb_log"), min_level = Logging.Info)
-    rng = MersenneTwister(seed)
+    rng = StableRNG(seed)
     inner_env = PendulumEnv(T = Float32, rng = rng)
     action_space = get_actions(inner_env)
     low = action_space.low
@@ -1217,7 +1311,7 @@ function RLCore.Experiment(
     N_ENV = 8
     UPDATE_FREQ = 16
     env = MultiThreadEnv([
-        PendulumEnv(T = Float32, rng = MersenneTwister(hash(seed + i))) |>
+        PendulumEnv(T = Float32, rng = StableRNG(hash(seed + i))) |>
         ActionTransformedEnv(x -> clamp(x * 2, low, high)) for i in 1:N_ENV
     ])
 
@@ -1226,25 +1320,20 @@ function RLCore.Experiment(
     agent = Agent(
         policy = PPOPolicy(
             approximator = ActorCritic(
-                actor = NeuralNetworkApproximator(
-                    model = GaussianNetwork(
-                        pre = Chain(
-                            Dense(ns, 64, relu; initW = glorot_uniform(rng)),
-                            Dense(64, 64, relu; initW = glorot_uniform(rng)),
-                        ),
-                        μ = Chain(Dense(64, 1, tanh; initW = glorot_uniform(rng)), vec),
-                        σ = Chain(Dense(64, 1; initW = glorot_uniform(rng)), vec),
-                    ),
-                    optimizer = ADAM(3e-4),
-                ),
-                critic = NeuralNetworkApproximator(
-                    model = Chain(
+                actor = GaussianNetwork(
+                    pre = Chain(
                         Dense(ns, 64, relu; initW = glorot_uniform(rng)),
                         Dense(64, 64, relu; initW = glorot_uniform(rng)),
-                        Dense(64, 1; initW = glorot_uniform(rng)),
                     ),
-                    optimizer = ADAM(3e-4),
+                    μ = Chain(Dense(64, 1, tanh; initW = glorot_uniform(rng)), vec),
+                    σ = Chain(Dense(64, 1; initW = glorot_uniform(rng)), vec),
                 ),
+                critic = Chain(
+                    Dense(ns, 64, relu; initW = glorot_uniform(rng)),
+                    Dense(64, 64, relu; initW = glorot_uniform(rng)),
+                    Dense(64, 1; initW = glorot_uniform(rng)),
+                ),
+                optimizer = ADAM(3e-4),
             ) |> cpu,
             γ = 0.99f0,
             λ = 0.95f0,
@@ -1319,7 +1408,7 @@ function RLCore.Experiment(
     end
 
     lg = TBLogger(joinpath(save_dir, "tb_log"), min_level = Logging.Info)
-    rng = MersenneTwister(seed)
+    rng = StableRNG(seed)
     inner_env = PendulumEnv(T = Float32, rng = rng)
     action_space = get_actions(inner_env)
     low = action_space.low
@@ -1417,7 +1506,7 @@ function RLCore.Experiment(
     end
 
     lg = TBLogger(joinpath(save_dir, "tb_log"), min_level = Logging.Info)
-    rng = MersenneTwister(seed)
+    rng = StableRNG(seed)
     env = CartPoleEnv(; T = Float32, rng = rng)
     ns, na = length(get_state(env)), length(get_actions(env))
 
@@ -1492,7 +1581,7 @@ function RLCore.Experiment(
     end
 
     lg = TBLogger(joinpath(save_dir, "tb_log"), min_level = Logging.Info)
-    rng = MersenneTwister(seed)
+    rng = StableRNG(seed)
     env = PendulumEnv(;
         T = Float32,
         rng = rng,
@@ -1580,7 +1669,7 @@ function RLCore.Experiment(
     end
 
     lg = TBLogger(joinpath(save_dir, "tb_log"), min_level = Logging.Info)
-    rng = MersenneTwister(seed)
+    rng = StableRNG(seed)
 
     inner_env = PendulumEnv(; T = Float32, rng = rng, max_steps = 100)
     high, low = get_actions(inner_env) |> x -> (x.low, x.high)
