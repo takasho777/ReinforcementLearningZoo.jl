@@ -137,6 +137,7 @@ function RLBase.update!(p::PPOPolicy, t::PPOTrajectory)
     @assert n_envs * n_rollout % n_microbatches == 0 "size mismatch"
     microbatch_size = n_envs * n_rollout ÷ n_microbatches
 
+    actions_flatten = flatten_batch(actions)
     states_flatten = flatten_batch(states)
     states_plus_flatten = flatten_batch(states_plus)
 
@@ -151,7 +152,7 @@ function RLBase.update!(p::PPOPolicy, t::PPOTrajectory)
         epoch == 1 ? p.avg_val = sum(returns) / length(returns) : nothing
         rand_inds = shuffle!(rng, Vector(1:n_envs*n_rollout))
         for i in 1:n_microbatches
-            inds = rand_inds[(i-1)*microbatch_size+1:i*microbatch_size]
+            inds = @view(rand_inds[(i-1)*microbatch_size+1:i*microbatch_size])
             s = send_to_device(D, select_last_dim(states_flatten, inds))
             if haskey(t, :legal_actions_mask)
                 lam = send_to_device(
@@ -159,7 +160,7 @@ function RLBase.update!(p::PPOPolicy, t::PPOTrajectory)
                     select_last_dim(flatten_batch(t[:legal_actions_mask]), inds),
                 )
             end
-            a = vec(actions)[inds]
+            a = send_to_device(D, select_last_dim(actions_flatten, inds))
             r = send_to_device(D, vec(returns)[inds])
             log_p = send_to_device(D, vec(action_log_probs)[inds])
             adv = send_to_device(D, vec(advantages)[inds])
@@ -169,8 +170,8 @@ function RLBase.update!(p::PPOPolicy, t::PPOTrajectory)
                 v′ = AC.critic(s) |> vec
                 if AC.actor isa NeuralNetworkApproximator{<:GaussianNetwork}
                     μ, σ = AC.actor(s)
-                    if eltype(a) <: AbstractArray
-                        log_p′ₐ = sum(normlogpdf(μ, σ, hcat(a...)),dims=1) |> vec
+                    if ndims(a) == 2  # vector action
+                        log_p′ₐ = sum(normlogpdf(μ, σ, a),dims=1) |> vec
                         entropy_loss = mean(sum((log(2.0f0π)+1)/2 .+ log.(σ .+ 1f-8), dims=1))
                     else
                         log_p′ₐ = normlogpdf(μ, σ, a)
@@ -232,13 +233,15 @@ function (agent::Agent{<:Union{PPOPolicy,RandomStartPolicy{<:PPOPolicy}}})(
         agent.policy.policy.rng
     end
 
-    action = [rand(rng, d) for d in dist]
+    action = rand.(rng, dist)
     action_log_prob = [logpdf(d, a) for (d, a) in zip(dist, action)]
-    # NOTE I made the following change to handle vectorized action
     if ndims(action) == 2
-        action = [@view(action[:,i]) for i=1:size(action,2)]
-        action_log_prob = sum(action_log_prob, dims=1) |> vec
+        action_log_prob = sum(logpdf.(dist, action), dims=1)
+    else
+        action_log_prob = logpdf.(dist, action)
     end
+    action_log_prob = vec(action_log_prob)
+
     push!(
         agent.trajectory;
         state = state,
