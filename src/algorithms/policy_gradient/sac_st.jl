@@ -6,27 +6,17 @@ using Flux
 using Flux.Losses: mse
 using Distributions: Normal, logpdf
 
-struct SACRandomPolicy{T<:AbstractFloat} <: AbstractPolicy
-    rng::AbstractRNG
-    na::Int  # action size
-end
-function (p::SACRandomPolicy{T})(env::AbstractEnv) where T
-    action_space = get_actions(env)
-    if action_space isa ContinuousSpace  # scalar action
-        return rand(p.rng,T)*2 - one(T)
-    else
-        return [rand(p.rng, T)*2 - one(T) for i = 1:p.na]
+
+# Expand RandomPolicy for MultiThreadEnv
+function (p::RandomPolicy)(env::MultiThreadEnv)
+    if p.action_space isa ContinuousSpace
+        action = Flux.unsqueeze([p(env[1]) for i=1:length(env)],1)
+    elseif p.action_space isa MultiContinuousSpace
+        action = Flux.batch([p(env[1]) for i=1:length(env)])
     end
+    action
 end
-function (p::SACRandomPolicy{T})(env::MultiThreadEnv) where T
-    a = Array{T, 2}(undef, p.na, length(env))
-    for j = 1:length(env)
-        for i = 1:p.na
-            a[i, j] = rand(p.rng, T)*2 - one(T)
-        end
-    end
-    a
-end
+
 
 # Define SAC Actor
 struct SACPolicyNetworkST

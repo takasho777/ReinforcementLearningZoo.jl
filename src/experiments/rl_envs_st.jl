@@ -67,7 +67,7 @@ function RLCore.Experiment(
             α = 0.1f0,
             batch_size = 64,
             start_steps = 1000,
-            start_policy = RandomPolicy(ContinuousSpace(-1.0f0, 1.0f0); rng = rng),  # output of the start policy is expected to be same as the output of the network.
+            start_policy = RandomPolicy(ContinuousSpace(-1.0, 1.0); rng = rng),
             update_after = 1000,
             update_every = update_every,
             rng = rng,
@@ -114,11 +114,6 @@ function RLCore.Experiment(
     )
 end
 
-
-# Expand RandomPolicy for MultiThreadEnv
-function (p::RandomPolicy)(env::MultiThreadEnv)
-    Flux.unsqueeze([p(env[1]) for i=1:length(env)],1)
-end
 
 function RLCore.Experiment(
     ::Val{:JuliaRL},
@@ -194,7 +189,7 @@ function RLCore.Experiment(
             α = 0.1f0,
             batch_size = 64,
             start_steps = 1000,
-            start_policy = RandomPolicy(ContinuousSpace(-1.0f0, 1.0f0); rng = rng),  # output of the start policy is expected to be same as the output of the network.
+            start_policy = RandomPolicy(ContinuousSpace(-1.0, 1.0); rng = rng),
             update_after = 1000,
             update_every = update_every,
             rng = rng,
