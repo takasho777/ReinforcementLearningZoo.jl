@@ -376,7 +376,7 @@ function RLBase.update!(p::SACFixedPolicyST, batch::NamedTuple{SARTS})
         q = min.(p.qnetwork1(q_input), p.qnetwork2(q_input))
         loss = mean(α .* log_π .- q)
         ignore() do
-            p.entropy = mean(log_π)
+            p.entropy = -mean(log_π)
             p.policy_loss = loss
             p.q_est = mean(q)
         end
